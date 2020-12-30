@@ -19,3 +19,182 @@
 
 
 
+# Figure 1 iPSC-MN differentiation time course
+
+# used Seurat Version 2.3.0
+library(Seurat)
+
+##Load sample names for meta data
+samples1 <- read.csv("20180227_ddSEQ_20160825_timecourse_sample_covariates.csv", row.names = 1)
+##Load expression matrix. https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE138121
+ddseq.data1 <- read.csv("GSE138121_BatchA_ddSEQ_UMIcounts.csv", row.names = 1)
+
+##Initialize the Seurat object with the raw (non-normalized data).  Keep all
+# genes expressed in >= 1 cell
+ddseq1 <- CreateSeuratObject(raw.data = ddseq.data1, 
+                           min.cells = 1, 
+                           min.genes = 0,
+                           project = "diMNs")
+ddseq1 <-  AddMetaData(object = ddseq1, 
+                     metadata = samples1)
+
+##Calculate the percentage of mitochondrial genes and store it in percent.mito
+mito.genes <- grep(pattern = "^MT-", 
+                   x = rownames(x = ddseq1@data), 
+                   value = TRUE)
+percent.mito <- Matrix::colSums(ddseq1@raw.data[mito.genes, ])/Matrix::colSums(ddseq1@raw.data)
+
+##AddMetaData adds columns to object@meta.data
+ddseq1 <- AddMetaData(object = ddseq1, 
+                    metadata = percent.mito, 
+                    col.name = "percent.mito")
+
+##Violin plots of Gene#, UMI#, and %mito
+VlnPlot(object = ddseq1, x.lab.rot = T,
+        features.plot = c("nGene", "nUMI", "percent.mito"), 
+        group.by = "SAMPLE",
+        nCol = 3)
+
+##Z-score nGene on a per sample basis
+nGene.z <- data.frame(ddseq1@cell.names, ddseq1@meta.data$SAMPLE, ddseq1@meta.data$nGene)
+colnames(nGene.z) <- c("cell", "SAMPLE", "nGene")
+nGene.z <- nGene.z %>% group_by(SAMPLE) %>% mutate(nGene.z = scale(nGene))
+nGene.z <- as.data.frame(nGene.z)
+rownames(nGene.z) <- nGene.z$cell
+nGene.z <- subset(nGene.z, select = "nGene.z")
+colnames(nGene.z) <- "nGene.z"
+ddseq1 <-  AddMetaData(object = ddseq1, metadata = nGene.z)
+##Z-score nUMI on a per sample basis
+nUMI.z <- data.frame(ddseq1@cell.names, ddseq1@meta.data$SAMPLE, ddseq1@meta.data$nUMI)
+colnames(nUMI.z) <- c("cell", "SAMPLE", "nUMI")
+nUMI.z <- nUMI.z %>% group_by(SAMPLE) %>% mutate(nUMI.z = scale(nUMI))
+nUMI.z <- as.data.frame(nUMI.z)
+rownames(nUMI.z) <- nUMI.z$cell
+nUMI.z <- subset(nUMI.z, select = "nUMI.z")
+ddseq1 <-  AddMetaData(object = ddseq1, metadata = nUMI.z, col.name = "nUMI.z")
+##Z-score percent.mito
+percent.mito.z <- scale(percent.mito)
+ddseq1 <-  AddMetaData(object = ddseq1, metadata = percent.mito.z, col.name = "percent.mito.z")
+
+##Filter cells based on Z-score
+length(ddseq1@meta.data$orig.ident)
+mean(ddseq1@meta.data$percent.mito)
+median(ddseq1@meta.data$nUMI)
+median(ddseq1@meta.data$nGene)
+max(ddseq1@meta.data$nUMI)
+
+ddseq1 <- FilterCells(object = ddseq1, subset.names = c("nGene.z", 
+                                                    "nUMI.z"), 
+                    low.thresholds = c(-3, -3), high.thresholds = c(3, 3))
+
+length(ddseq1@meta.data$orig.ident)
+mean(ddseq1@meta.data$percent.mito)
+median(ddseq1@meta.data$nUMI)
+median(ddseq1@meta.data$nGene)
+max(ddseq1@meta.data$nUMI)
+
+max.nUMI <- max(ddseq1@meta.data$nUMI)
+
+##Violin plots of Gene#, UMI#, and %mito after filtering
+VlnPlot(object = ddseq1, x.lab.rot = T, point.size.use = 0.001,
+        features.plot = c("nGene", "nUMI"),
+        group.by = "SAMPLE",
+        nCol = 2)
+#Use GenePlot to visualize data after filtering
+par(mfrow = c(1, 2))
+GenePlot(object = ddseq1, gene1 = "nUMI", gene2 = "percent.mito")
+GenePlot(object = ddseq1, gene1 = "nUMI", gene2 = "nGene")
+
+##Global-scaling normalization method LogNormalize that normalizes the gene 
+# expression measurements for each cell by the total expression, multiplies this
+# by a scale factor (10,000 by default), and log-transforms the result.
+# We used the maximum nUMI in this data set as the scale factor.
+max.nUMI <- max(ddseq1@meta.data$nUMI)
+ddseq1 <- NormalizeData(object = ddseq1, normalization.method = "LogNormalize", 
+                       scale.factor = max.nUMI)
+
+##FindVariableGenes calculates the average expression and dispersion for each 
+# gene, places these genes into bins, and then calculates a z-score for 
+# dispersion within each bin. This helps control for the relationship between 
+# variability and average expression. Seurat calculates highly variable genes 
+# and focuses on these for downstream analysis
+par(mfrow = c(1, 1))
+ddseq1 <- FindVariableGenes(object = ddseq1, mean.function = ExpMean, dispersion.function = LogVMR, 
+                           x.low.cutoff = 0, x.high.cutoff = Inf, y.cutoff = 2)
+length(x = ddseq1@var.genes)
+
+##Regress out cell-cell variation in gene expression driven by batch (if 
+# applicable), cell alignment rate (as provided by Drop-seq tools for Drop-seq 
+# data), the number of detected molecules, and mitochondrial gene expression
+ddseq1 <- ScaleData(object = ddseq1,
+                   do.scale = TRUE,
+                   do.center = TRUE)
+
+### dimensionality reduction based on centered and scaled data
+## Perform linear dimensional reduction
+ddseq1 <- RunPCA(object = ddseq1, 
+               pc.genes = ddseq1@var.genes,
+               pcs.compute = 50,
+               do.print = TRUE, 
+               pcs.print = 1:5, 
+               genes.print = 5)
+
+# Examine and visualize PCA results a few different ways
+PrintPCA(object = ddseq1, pcs.print = 1:5, genes.print = 5, use.full = FALSE)
+VizPCA(object = ddseq1, pcs.use = 1:2)
+PCAPlot(object = ddseq1, group.by = "SAMPLE", dim.1 = 1, dim.2 = 2)
+
+PCHeatmap(object = ddseq1, pc.use = 1, cells.use = 500, do.balanced = TRUE, label.columns = FALSE)
+PCHeatmap(object = ddseq1, pc.use = 1:12, cells.use = 500, do.balanced = TRUE, 
+          label.columns = FALSE, use.full = FALSE)
+
+## Determine statistically significant principal components
+PCElbowPlot(object = ddseq1, num.pc = 50)
+ddseq1 <- JackStraw(object = ddseq1, num.pc = 50, num.replicate = 100)
+
+JackStrawPlot(object = ddseq1, PCs = 1:48)
+# determine significant PC < 0.05
+sigPC <- 19
+
+class(ddseq1@dr$pca@jackstraw@emperical.p.value)
+JSPval <- as.data.frame(ddseq1@dr$pca@jackstraw@emperical.p.value)
+
+# Cluster cells
+# save.SNN = T saves the SNN so that the clustering algorithm can be rerun using the same graph
+# but with a different resolution value
+ddseq1 <- FindClusters(object = ddseq1, reduction.type = "pca", dims.use = 1:sigPC,
+                     resolution = 0.8, print.output = 0, save.SNN = TRUE)
+
+# tSNE: tried perplexity 25, 50, 75, 100. decided perplexity = 100 is ideal
+ddseq1 <- RunTSNE(ddseq1,
+                  reduction.use = "pca",
+                  dims.use = 1:sigPC,
+                  perplexity = 100)
+
+# Visualization
+TSNEPlot(ddseq1)
+TSNEPlot(object = ddseq1, group.by = "TIMECOURSE")
+TSNEPlot(object = ddseq1, group.by = "SAMPLE")
+
+# invert tSNE_2 coordinates
+tsne.cell.embeddings <- ddseq1@dr$tsne@cell.embeddings
+tsne.cell.embeddings.df <- as.data.frame(tsne.cell.embeddings)
+
+tsne.cell.embeddings.df$tSNE_2 <- tsne.cell.embeddings.df$tSNE_2*-1
+tsne.cell.embeddings.neg.mtx <- as.matrix(tsne.cell.embeddings.df)
+
+#make new ddesq1.neg object to replace embedding
+ddseq1.neg <- ddseq1
+ddseq1.neg@dr$tsne@cell.embeddings <- tsne.cell.embeddings.neg.mtx
+
+TSNEPlot(ddseq1.neg, do.label = T, pt.size = 0.5)
+
+# Visualization
+TSNEPlot(ddseq1)
+TSNEPlot(object = ddseq1.neg, group.by = "TIMECOURSE")
+TSNEPlot(object = ddseq1.neg, group.by = "SAMPLE")
+
+# write over ddseq1 with the neg tSNE_2 coordinates
+ddseq1 <- ddseq1.neg
+
+save(ddseq1, file = "20180717_ddseq1.Robj")
