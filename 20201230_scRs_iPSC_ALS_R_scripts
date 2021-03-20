@@ -25,18 +25,19 @@
 library(Seurat)
 
 ##Load sample names for meta data
-samples1 <- read.csv("20180227_ddSEQ_20160825_timecourse_sample_covariates.csv", row.names = 1)
+load(file = "20180227_ddSEQ_20160825_timecourse_sample_covariates.rda") # object is samples1
+
 ##Load expression matrix. https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE138121
-ddseq.data1 <- read.csv("GSE138121_BatchA_ddSEQ_UMIcounts.csv", row.names = 1)
+ddseq.data1 <- read.csv("GSE138121_BatchA_ddSEQ_UMIcounts.csv.gz", row.names = 1)
 
 ##Initialize the Seurat object with the raw (non-normalized data).  Keep all
 # genes expressed in >= 1 cell
 ddseq1 <- CreateSeuratObject(raw.data = ddseq.data1, 
-                           min.cells = 1, 
-                           min.genes = 0,
-                           project = "diMNs")
+                             min.cells = 1, 
+                             min.genes = 0,
+                             project = "diMNs")
 ddseq1 <-  AddMetaData(object = ddseq1, 
-                     metadata = samples1)
+                       metadata = samples1)
 
 ##Calculate the percentage of mitochondrial genes and store it in percent.mito
 mito.genes <- grep(pattern = "^MT-", 
@@ -46,8 +47,8 @@ percent.mito <- Matrix::colSums(ddseq1@raw.data[mito.genes, ])/Matrix::colSums(d
 
 ##AddMetaData adds columns to object@meta.data
 ddseq1 <- AddMetaData(object = ddseq1, 
-                    metadata = percent.mito, 
-                    col.name = "percent.mito")
+                      metadata = percent.mito, 
+                      col.name = "percent.mito")
 
 ##Violin plots of Gene#, UMI#, and %mito
 VlnPlot(object = ddseq1, x.lab.rot = T,
@@ -84,8 +85,8 @@ median(ddseq1@meta.data$nGene)
 max(ddseq1@meta.data$nUMI)
 
 ddseq1 <- FilterCells(object = ddseq1, subset.names = c("nGene.z", 
-                                                    "nUMI.z"), 
-                    low.thresholds = c(-3, -3), high.thresholds = c(3, 3))
+                                                        "nUMI.z"), 
+                      low.thresholds = c(-3, -3), high.thresholds = c(3, 3))
 
 length(ddseq1@meta.data$orig.ident)
 mean(ddseq1@meta.data$percent.mito)
@@ -111,7 +112,7 @@ GenePlot(object = ddseq1, gene1 = "nUMI", gene2 = "nGene")
 # We used the maximum nUMI in this data set as the scale factor.
 max.nUMI <- max(ddseq1@meta.data$nUMI)
 ddseq1 <- NormalizeData(object = ddseq1, normalization.method = "LogNormalize", 
-                       scale.factor = max.nUMI)
+                        scale.factor = max.nUMI)
 
 ##FindVariableGenes calculates the average expression and dispersion for each 
 # gene, places these genes into bins, and then calculates a z-score for 
@@ -120,24 +121,24 @@ ddseq1 <- NormalizeData(object = ddseq1, normalization.method = "LogNormalize",
 # and focuses on these for downstream analysis
 par(mfrow = c(1, 1))
 ddseq1 <- FindVariableGenes(object = ddseq1, mean.function = ExpMean, dispersion.function = LogVMR, 
-                           x.low.cutoff = 0, x.high.cutoff = Inf, y.cutoff = 2)
+                            x.low.cutoff = 0, x.high.cutoff = Inf, y.cutoff = 2)
 length(x = ddseq1@var.genes)
 
 ##Regress out cell-cell variation in gene expression driven by batch (if 
 # applicable), cell alignment rate (as provided by Drop-seq tools for Drop-seq 
 # data), the number of detected molecules, and mitochondrial gene expression
 ddseq1 <- ScaleData(object = ddseq1,
-                   do.scale = TRUE,
-                   do.center = TRUE)
+                    do.scale = TRUE,
+                    do.center = TRUE)
 
 ### dimensionality reduction based on centered and scaled data
 ## Perform linear dimensional reduction
 ddseq1 <- RunPCA(object = ddseq1, 
-               pc.genes = ddseq1@var.genes,
-               pcs.compute = 50,
-               do.print = TRUE, 
-               pcs.print = 1:5, 
-               genes.print = 5)
+                 pc.genes = ddseq1@var.genes,
+                 pcs.compute = 50,
+                 do.print = TRUE, 
+                 pcs.print = 1:5, 
+                 genes.print = 5)
 
 # Examine and visualize PCA results a few different ways
 PrintPCA(object = ddseq1, pcs.print = 1:5, genes.print = 5, use.full = FALSE)
@@ -163,7 +164,7 @@ JSPval <- as.data.frame(ddseq1@dr$pca@jackstraw@emperical.p.value)
 # save.SNN = T saves the SNN so that the clustering algorithm can be rerun using the same graph
 # but with a different resolution value
 ddseq1 <- FindClusters(object = ddseq1, reduction.type = "pca", dims.use = 1:sigPC,
-                     resolution = 0.8, print.output = 0, save.SNN = TRUE)
+                       resolution = 0.8, print.output = 0, save.SNN = TRUE)
 
 # tSNE: tried perplexity 25, 50, 75, 100. decided perplexity = 100 is ideal
 ddseq1 <- RunTSNE(ddseq1,
@@ -197,4 +198,256 @@ TSNEPlot(object = ddseq1.neg, group.by = "SAMPLE")
 # write over ddseq1 with the neg tSNE_2 coordinates
 ddseq1 <- ddseq1.neg
 
-save(ddseq1, file = "20180717_ddseq1.Robj")
+
+
+
+
+
+
+# Figure 1 iPSC-MN differentiation time course Monocle
+
+# used monocle version 2.12.0
+library(monocle)
+library(Biobase)
+library(Matrix)
+library(reshape2)
+
+##Load sample names for meta data
+load(file = "20180227_ddSEQ_20160825_timecourse_sample_covariates.rda") # object is samples1
+
+##Load expression matrix. https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE138121
+ddseq.data1 <- read.csv("GSE138121_BatchA_ddSEQ_UMIcounts.csv.gz", row.names = 1)
+
+samples <- samples1
+tenx.data <- ddseq.data1
+tenx.data <- as.matrix(tenx.data)
+
+genes <- as.data.frame(rownames(tenx.data))
+colnames(genes) <- "gene_short_name"
+rownames(genes) <- genes$gene_short_name
+
+#Create CellDataSet Object
+pd <- new("AnnotatedDataFrame", data = samples)
+fd <- new("AnnotatedDataFrame", data = genes)
+
+tenx <- newCellDataSet(as(tenx.data, "sparseMatrix"),
+                       phenoData = pd,
+                       featureData = fd,
+                       expressionFamily = negbinomial.size())
+
+#Estimate size factors and dispersions
+#Size factors help normalize for differences in mRNA recovered across cells
+#Dispersion values help perform differential expression analysis later
+tenx <- estimateSizeFactors(tenx)
+tenx <- estimateDispersions(tenx)
+
+#Filtering low-quality cells
+tenx <- detectGenes(tenx, min_expr = 0.1)
+print(head(fData(tenx)))
+expressed_genes <- row.names(subset(fData(tenx), num_cells_expressed >= 10))
+print(head(pData(tenx)))
+
+#Distribution of mRNA totals across the cells:
+pData(tenx)$Total_mRNAs <- Matrix::colSums(exprs(tenx))
+
+tenx <- tenx[,pData(tenx)$Total_mRNAs < 1e6]
+
+upper_bound <- 10^(mean(log10(pData(tenx)$Total_mRNAs)) +
+                     3*sd(log10(pData(tenx)$Total_mRNAs)))
+lower_bound <- 10^(mean(log10(pData(tenx)$Total_mRNAs)) -
+                     3*sd(log10(pData(tenx)$Total_mRNAs)))
+
+qplot(Total_mRNAs, data = pData(tenx), color = SAMPLE, geom =
+        "density") +
+  geom_vline(xintercept = lower_bound) +
+  geom_vline(xintercept = upper_bound)
+
+tenx <- tenx[,pData(tenx)$Total_mRNAs > lower_bound &
+               pData(tenx)$Total_mRNAs < upper_bound]
+
+# #Once you've excluded cells that do not pass your quality control filters,
+# #you should verify that the expression values stored in your CellDataSet
+# #follow a distribution that is roughly lognormal
+# # Log-transform each value in the expression matrix.
+L <- log(exprs(tenx[expressed_genes,]))
+#
+# # Standardize each gene, so that they are all on the same scale,
+# # Then melt the data with plyr so we can plot it easily
+melted_dens_df <- melt(Matrix::t(scale(Matrix::t(L))))
+#
+# # Plot the distribution of the standardized gene expression values.
+qplot(value, geom = "density", data = melted_dens_df) +
+  stat_function(fun = dnorm, size = 0.5, color = 'red') +
+  xlab("Standardized log(FPKM)") +
+  ylab("Density")
+
+disp_table <- dispersionTable(tenx)
+unsup_clustering_genes <- subset(disp_table, mean_expression >= 0.1 & dispersion_empirical >= 0.1)
+tenx <- setOrderingFilter(tenx, unsup_clustering_genes$gene_id)
+plot_ordering_genes(tenx)
+
+# order cells along psuedotime
+tenx <- reduceDimension(tenx, max_components = 2,
+                        method = 'DDRTree') # takes a while...
+tenx <- orderCells(tenx)
+plot_cell_trajectory(tenx, color_by = "TIMECOURSE")
+plot_cell_trajectory(tenx, color_by = "Pseudotime")
+
+
+
+# Figure S3A plotting key development and maturation genes along pseudotime
+
+to_be_tested <- row.names(subset(fData(tenx),
+                                 gene_short_name %in% c("L1TD1", "TDGF1", "POU5F1", "FXYD5", "PHLDA2")))
+tenx_subset <- tenx[to_be_tested,]
+plot_genes_in_pseudotime(tenx_subset, color_by = "TIMECOURSE")
+
+to_be_tested <- row.names(subset(fData(tenx),
+                                 gene_short_name %in% c("ILF2", "MSH2", "DLGAP5", "TOP2A", "FZD7")))
+tenx_subset <- tenx[to_be_tested,]
+plot_genes_in_pseudotime(tenx_subset, color_by = "TIMECOURSE")
+
+to_be_tested <- row.names(subset(fData(tenx),
+                                 gene_short_name %in% c("RFX4", "HOXB8", "DCX", "ASCL1", "SST")))
+tenx_subset <- tenx[to_be_tested,]
+plot_genes_in_pseudotime(tenx_subset, color_by = "TIMECOURSE")
+
+to_be_tested <- row.names(subset(fData(tenx),
+                                 gene_short_name %in% c("SNAP25", "SPOCK3", "TNS1", "NEFH", "SCN1A")))
+tenx_subset <- tenx[to_be_tested,]
+plot_genes_in_pseudotime(tenx_subset, color_by = "TIMECOURSE")
+
+
+
+
+
+# Figure 1H Spearman correlation between diMN cultures and fetal hindbrain and spinal cord
+
+load("20180717_diMN_timecourse_expr_with_de_Kovel_intersect_genes.rda")
+load("20180717_de_Kovel_expr_with_diMN_timecourse_intersect_genes.rda")
+# correlate diMN timecourse with de.Kovel
+spear <- cor(diMN.timecourse, de.Kovel, use = "pairwise.complete.obs", method = "spearman")
+write.csv(spear, file = "20180717_diMN_timecourse_de_Kovel_Spearman.csv")
+
+load("20180501_diMN_expr_with_de_Kovel_intersect_genes.rda")
+load("20180501_de_Kovel_expr_with_diMN_intersect_genes.rda")
+# correlate diMN with de.Kovel
+spear <- cor(diMN, de.Kovel, use = "pairwise.complete.obs", method = "spearman")
+write.csv(spear, file = "20180501_diMN_de_Kovel_Spearman.csv")
+
+
+
+
+
+# Figure 2C hindbrain and spinal cord assignment through HOX gene correlation
+
+install.packages('psych')
+library("psych")
+
+load("20181016_HOX_code_no_HOXD1.rda")
+load("20181017_De_Kovel_HOX_linear.rda")
+
+DVcode.dekovel <- merge(DVcode, dekovel, by = "row.names", all = F)
+
+# generate new DVcode table that contains only intersect genes
+DVcode.unit <- DVcode.dekovel[,1:ncol(DVcode)+1]
+# add GENES into row names
+row.names(DVcode.unit) <- DVcode.dekovel$Row.names
+
+max(DVcode.unit)
+min(DVcode.unit)
+
+# log1p DVcode unit
+DVcode.unit.log <- log1p(DVcode.unit)
+max(DVcode.unit.log)
+min(DVcode.unit.log)
+
+# correlate DVcode.unit
+pear <- cor(DVcode.unit.log, use = "pairwise.complete.obs", method = "pearson")
+write.csv(pear, file = "20181016_DVcode_unit_log_pearson.csv")
+
+
+# extract dekovel table from DVcode.dekovel
+dekovel.HOX <- DVcode.dekovel[,(ncol(DVcode)+2):ncol(DVcode.dekovel)]
+row.names(dekovel.HOX) <- DVcode.dekovel$Row.names
+
+max(dekovel.HOX)
+min(dekovel.HOX)
+
+# log1p dekovel.HOX
+dekovel.HOX.log <- log1p(dekovel.HOX)
+max(dekovel.HOX.log)
+min(dekovel.HOX.log)
+
+
+# correlate DVcode.unit with dekovel.HOX based on 38 HOX genes
+pear <- cor(dekovel.HOX.log, DVcode.unit.log, use = "pairwise.complete.obs", method = "pearson")
+write.csv(pear, file = "20181017_De_Kovel_HOXcode_unit_log_pearson.csv")
+dim(pear)
+
+
+# calculate the maximum pearson value of each of the single cells
+pear.df <- as.data.frame(pear)
+pear.maxes <- apply(pear.df[,1:length(pear.df)], 1, FUN = max)
+pear.maxes.noNA <- pear.maxes[complete.cases(pear.maxes)]
+
+length(pear.maxes)
+# 66
+length(pear.maxes.noNA)
+# 66
+
+plot(density(pear.maxes.noNA), col = "red", main = "20181017_De_Kovel_HOXcode_unit_log_pearson_distribution")
+
+dev.copy(pdf,'20181017_De_Kovel_HOXcode_unit_log_pearson_distribution.pdf')
+dev.off()
+
+median(pear.maxes)
+# 0.7742911
+median(pear.maxes.noNA)
+# 0.7742911
+
+# create vector of column names for maximum row value
+assignment <- colnames(pear.df)[max.col(pear.df,ties.method="first")]
+# for ties, randomly take the max value
+assignment.random <- colnames(pear.df)[max.col(pear.df,ties.method="random")]
+
+# create column in pear.df as MAX_PEARSON
+pear.df$MAX_PEARSON <- pear.maxes
+
+# create column in pear.df as ASSIGNMENT
+pear.df$ASSIGNMENT <- assignment
+
+# create column in pear.df as ASSIGNMENT.random
+pear.df$ASSIGNMENT.RANDOM <- assignment.random
+
+all.equal(assignment, assignment.random)
+# "TRUE"
+
+# write csv of assignments based just on Pearson max (no P-value column)
+write.csv(pear.df, file = "20181017_De_Kovel_HOXcode_unit_log_pearson_with_ASSIGNMENT.csv", row.names = T)
+
+# use psych package corr.test to create probability values of correlations
+pear.test.BH <- corr.test(dekovel.HOX.log, DVcode.unit.log, use = "pairwise", method = "pearson", adjust = "BH")
+
+# calculate the min corr.test BH value of each of the samples or single cells
+pear.test.BH.df <- as.data.frame(pear.test.BH$p)
+pear.test.BH.mins <- apply(pear.test.BH.df[,1:length(pear.test.BH.df)], 1, FUN = min)
+pear.test.BH.mins.noNA <- pear.test.BH.mins[complete.cases(pear.test.BH.mins)]
+length(pear.test.BH.mins)
+# 66
+length(pear.test.BH.mins.noNA)
+# 66
+
+plot(density(pear.test.BH.mins.noNA), col = "red", main = "20181017_De_Kovel_HOXcode_unit_log_pearson_BH_distribution")
+
+dev.copy(pdf,'20181017_De_Kovel_HOXcode_unit_log_pearson_BH_distribution.pdf')
+dev.off()
+
+median(pear.test.BH.mins)
+median(pear.test.BH.mins.noNA)
+
+# create column in pear.df as MIN_PEARSON_BH_PVAL
+pear.df$MIN_PEARSON_BH_PVAL <- pear.test.BH.mins
+
+# write csv
+write.csv(pear.df, file = "20181017_De_Kovel_HOXcode_unit_log_pearson_BH_with_ASSIGNMENT.csv")
