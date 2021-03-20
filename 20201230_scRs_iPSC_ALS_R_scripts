@@ -451,3 +451,117 @@ pear.df$MIN_PEARSON_BH_PVAL <- pear.test.BH.mins
 
 # write csv
 write.csv(pear.df, file = "20181017_De_Kovel_HOXcode_unit_log_pearson_BH_with_ASSIGNMENT.csv")
+
+
+
+
+
+# Figure 2C hindbrain and spinal cord assignment of all 17531 day 18 cells through HOX gene correlation
+
+install.packages('psych')
+library("psych")
+
+load("20181016_HOX_code_no_HOXD1.rda")
+load("20180424_all_d18_expr_post_dtw_unlog.rda")
+
+DVcode.diMN <- merge(DVcode, post_dtw_unlog, by = "row.names", all = F)
+
+# generate new DVcode table that contains only intersect genes
+DVcode.unit <- DVcode.diMN[,1:ncol(DVcode)+1]
+# add GENES into row names
+row.names(DVcode.unit) <- DVcode.diMN$Row.names
+
+max(DVcode.unit)
+min(DVcode.unit)
+
+# log1p DVcode unit
+DVcode.unit.log <- log1p(DVcode.unit)
+max(DVcode.unit.log)
+min(DVcode.unit.log)
+
+# correlate DVcode.unit
+pear <- cor(DVcode.unit.log, use = "pairwise.complete.obs", method = "pearson")
+write.csv(pear, file = "20181016_DVcode_unit_log_pearson.csv")
+
+# extract diMN table from DVcode.diMN
+diMN <- DVcode.diMN[,(ncol(DVcode)+2):ncol(DVcode.diMN)]
+row.names(diMN) <- DVcode.diMN$Row.names
+
+max(diMN)
+min(diMN)
+
+# log1p diMN
+diMN.log <- log1p(diMN)
+max(diMN.log)
+min(diMN.log)
+
+# correlate DVcode.unit with diMN based on 36 HOX genes
+pear <- cor(diMN.log, DVcode.unit.log, use = "pairwise.complete.obs", method = "pearson")
+write.csv(pear, file = "20181016_DVcode_unit_diMN_log_pearson.csv")
+dim(pear)
+
+# calculate the maximum pearson value of each of the single cells
+pear.df <- as.data.frame(pear)
+pear.maxes <- apply(pear.df[,1:length(pear.df)], 1, FUN = max)
+pear.maxes.noNA <- pear.maxes[complete.cases(pear.maxes)]
+
+length(pear.maxes)
+# 17531
+length(pear.maxes.noNA)
+# 16765
+
+plot(density(pear.maxes.noNA), col = "red", main = "20181016_DVcode_unit_diMN_log_pearson_distribution")
+
+dev.copy(pdf,'20181016_DVcode_unit_diMN_log_pearson_distribution.pdf')
+dev.off()
+
+median(pear.maxes)
+# NA
+median(pear.maxes.noNA)
+# 0.4471776
+
+# create vector of column names for maximum row value
+assignment <- colnames(pear.df)[max.col(pear.df,ties.method="first")]
+# for ties, randomly take the max value
+assignment.random <- colnames(pear.df)[max.col(pear.df,ties.method="random")]
+
+# create column in pear.df as MAX_PEARSON
+pear.df$MAX_PEARSON <- pear.maxes
+
+# create column in pear.df as ASSIGNMENT
+pear.df$ASSIGNMENT <- assignment
+
+# create column in pear.df as ASSIGNMENT.random
+pear.df$ASSIGNMENT.RANDOM <- assignment.random
+
+all.equal(assignment, assignment.random)
+# "TRUE"
+
+# write csv of assignments based just on Pearson max (no P-value column)
+write.csv(pear.df, file = "20181016_DVcode_unit_diMN_log_pearson_with_ASSIGNMENT.csv", row.names = T)
+
+# use psych package corr.test to create probability values of correlations
+pear.test.BH <- corr.test(diMN.log, DVcode.unit.log, use = "pairwise", method = "pearson", adjust = "BH")
+
+# calculate the min corr.test BH value of each of the single cells
+pear.test.BH.df <- as.data.frame(pear.test.BH$p)
+pear.test.BH.mins <- apply(pear.test.BH.df[,1:length(pear.test.BH.df)], 1, FUN = min)
+pear.test.BH.mins.noNA <- pear.test.BH.mins[complete.cases(pear.test.BH.mins)]
+length(pear.test.BH.mins)
+# 17531
+length(pear.test.BH.mins.noNA)
+# 
+
+plot(density(pear.test.BH.mins.noNA), col = "red", main = "20181016_DVcode_unit_diMN_log_pearson_BH_distribution")
+
+dev.copy(pdf,'20181016_DVcode_unit_diMN_log_pearson_BH_distribution.pdf')
+dev.off()
+
+median(pear.test.BH.mins)
+median(pear.test.BH.mins.noNA)
+
+# create column in pear.df as MIN_PEARSON_BH_PVAL
+pear.df$MIN_PEARSON_BH_PVAL <- pear.test.BH.mins
+
+# write csv
+write.csv(pear.df, file = "20181016_DVcode_unit_diMN_log_pearson_BH_with_ASSIGNMENT.csv")
