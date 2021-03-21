@@ -462,7 +462,19 @@ install.packages('psych')
 library("psych")
 
 load("20181016_HOX_code_no_HOXD1.rda")
-load("20180424_all_d18_expr_post_dtw_unlog.rda")
+
+# the 17531 day 18 cell UMI expression counts are split into these 5 files, limited to under 25 MB each.
+# download them, load into R and column bind to create the entire expression matrix
+load("20180424_all_d18_expr_post_dtw_unlog_a.rda")
+load("20180424_all_d18_expr_post_dtw_unlog_b.rda")
+load("20180424_all_d18_expr_post_dtw_unlog_c.rda")
+load("20180424_all_d18_expr_post_dtw_unlog_d.rda")
+load("20180424_all_d18_expr_post_dtw_unlog_e.rda")
+
+post_dtw_unlog <- cbind(post_dtw_unlog_a, post_dtw_unlog_b)
+post_dtw_unlog <- cbind(post_dtw_unlog, post_dtw_unlog_c)
+post_dtw_unlog <- cbind(post_dtw_unlog, post_dtw_unlog_d)
+post_dtw_unlog <- cbind(post_dtw_unlog, post_dtw_unlog_e)
 
 DVcode.diMN <- merge(DVcode, post_dtw_unlog, by = "row.names", all = F)
 
@@ -559,6 +571,12 @@ dev.off()
 
 median(pear.test.BH.mins)
 median(pear.test.BH.mins.noNA)
+
+# create column in pear.df as MIN_PEARSON_BH_PVAL
+pear.df$MIN_PEARSON_BH_PVAL <- pear.test.BH.mins
+
+# write csv
+write.csv(pear.df, file = "20181016_DVcode_unit_diMN_log_pearson_BH_with_ASSIGNMENT.csv")
 
 # create column in pear.df as MIN_PEARSON_BH_PVAL
 pear.df$MIN_PEARSON_BH_PVAL <- pear.test.BH.mins
